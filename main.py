@@ -33,8 +33,9 @@ def encode_saved_images(
         image_aligned = mtcnn(image)
 
         if image_aligned is not None:
-            aligned_faces.append(image_aligned)
-            labels.append(label)
+            for _, img in enumerate(image_aligned):
+                aligned_faces.append(img[None])
+                labels.append(label)
 
     aligned_faces = torch.cat(aligned_faces, dim=0).to(device)
     embeddings = resnet(aligned_faces).detach().cpu()
@@ -127,7 +128,7 @@ def detect(
                 )
                 idx = idx_to_class[idx] if idx is not None else "Unknown"
 
-                msg += f"{idx} at [({x1}, {y1}), ({x2}, {y2})"
+                msg += f"{idx} at [({x1}, {y1}), ({x2}, {y2}), "
         else:
             msg += "No faces detected"
 
