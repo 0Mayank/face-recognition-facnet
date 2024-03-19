@@ -7,9 +7,18 @@ import torch.nn.functional as F
 from models import get_resnet, get_mtcnn
 
 
-def encode_saved_images(path, device, embeddings_file, labels_file,
-                        idx_to_class_file, save_path, mtcnn, resnet, transform=None,
-                        workers=4):
+def encode_saved_images(
+    path,
+    device,
+    embeddings_file,
+    labels_file,
+    idx_to_class_file,
+    save_path,
+    mtcnn,
+    resnet,
+    transform=None,
+    workers=4,
+):
     transform = tv.transforms.Compose([]) if transform is None else transform
     workers = 0 if os.name == "nt" else workers
 
@@ -24,8 +33,9 @@ def encode_saved_images(path, device, embeddings_file, labels_file,
         image_aligned = mtcnn(image)
 
         if image_aligned is not None:
-            aligned_faces.append(image_aligned)
-            labels.append(label)
+            for _, img in enumerate(image_aligned):
+                aligned_faces.append(img[None])
+                labels.append(label)
 
     aligned_faces = torch.cat(aligned_faces, dim=0).to(device)
     embeddings = resnet(aligned_faces).detach().cpu()
@@ -37,11 +47,24 @@ def encode_saved_images(path, device, embeddings_file, labels_file,
     return embeddings, labels, idx_to_class
 
 
-def get_embeddings(faces_path, device, mtcnn, resnet, save_path="./data", embeddings_file="embeddings.pt",
-                   labels_file="labels.pt",
-                   transform=None, overwrite=False, idx_to_class_file="idx_to_class.dict"):
-    if not overwrite and os.path.exists(save_path + "/" + embeddings_file) and os.path.exists(
-            save_path + "/" + labels_file) and os.path.exists(save_path + "/" + idx_to_class_file):
+def get_embeddings(
+    faces_path,
+    device,
+    mtcnn,
+    resnet,
+    save_path="./data",
+    embeddings_file="embeddings.pt",
+    labels_file="labels.pt",
+    transform=None,
+    overwrite=False,
+    idx_to_class_file="idx_to_class.dict",
+):
+    if (
+        not overwrite
+        and os.path.exists(save_path + "/" + embeddings_file)
+        and os.path.exists(save_path + "/" + labels_file)
+        and os.path.exists(save_path + "/" + idx_to_class_file)
+    ):
         embeddings = torch.load(save_path + "/" + embeddings_file)
         labels = torch.load(save_path + "/" + labels_file)
         idx_to_class = torch.load(save_path + "/" + idx_to_class_file)
@@ -51,9 +74,17 @@ def get_embeddings(faces_path, device, mtcnn, resnet, save_path="./data", embedd
     if not os.path.exists(save_path):
         os.makedirs(save_path)
 
-    return encode_saved_images(faces_path, device, embeddings_file, labels_file, idx_to_class_file, save_path, mtcnn,
-                               resnet,
-                               transform)
+    return encode_saved_images(
+        faces_path,
+        device,
+        embeddings_file,
+        labels_file,
+        idx_to_class_file,
+        save_path,
+        mtcnn,
+        resnet,
+        transform,
+    )
 
 
 def classify_image(image, device, resnet, embeddings, labels, threshold):
@@ -65,11 +96,16 @@ def classify_image(image, device, resnet, embeddings, labels, threshold):
     return labels[max_index] if similarity[max_index] > threshold else None
 
 
-def detect(device, mtcnn, resnet, embeddings, labels, idx_to_class, cam=0, threshold=0.6):
+def detect(
+    device, mtcnn, resnet, embeddings, labels, idx_to_class, cam=0, threshold=0.6
+):
     vid = cv2.VideoCapture(cam)
 
     while vid.grab():
-        _, img, = vid.retrieve()
+        (
+            _,
+            img,
+        ) = vid.retrieve()
         batch_boxes, aligned_images = mtcnn.detect_box(img)
 
         if aligned_images is not None:
@@ -77,12 +113,26 @@ def detect(device, mtcnn, resnet, embeddings, labels, idx_to_class, cam=0, thres
                 aligned = torch.Tensor(aligned.unsqueeze(0))
                 x1, y1, x2, y2 = [int(x) for x in box]
 
-                idx = classify_image(image=aligned, device=device, resnet=resnet, embeddings=embeddings, labels=labels,
-                                     threshold=threshold)
+                idx = classify_image(
+                    image=aligned,
+                    device=device,
+                    resnet=resnet,
+                    embeddings=embeddings,
+                    labels=labels,
+                    threshold=threshold,
+                )
                 idx = idx_to_class[idx] if idx is not None else "Unknown"
 
                 cv2.rectangle(img, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                cv2.putText(img, idx, (x1 + 5, y1 + 10), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(
+                    img,
+                    idx,
+                    (x1 + 5, y1 + 10),
+                    cv2.FONT_HERSHEY_DUPLEX,
+                    0.5,
+                    (255, 255, 255),
+                    1,
+                )
 
         cv2.imshow("Face Recognition", img)
         if cv2.waitKey(1) == ord("q"):
@@ -90,13 +140,21 @@ def detect(device, mtcnn, resnet, embeddings, labels, idx_to_class, cam=0, thres
             break
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     mtcnn = get_mtcnn(device)
     resnet = get_resnet(device)
 
-    embeddings, labels, idx_to_class = get_embeddings(faces_path="./faces", device=device, mtcnn=mtcnn, resnet=resnet)
+    embeddings, labels, idx_to_class = get_embeddings(
+        faces_path="./faces", device=device, mtcnn=mtcnn, resnet=resnet
+    )
 
-    detect(device=device, mtcnn=mtcnn, resnet=resnet, embeddings=embeddings, labels=labels,
-           idx_to_class=idx_to_class)
+    detect(
+        device=device,
+        mtcnn=mtcnn,
+        resnet=resnet,
+        embeddings=embeddings,
+        labels=labels,
+        idx_to_class=idx_to_class,
+    )
